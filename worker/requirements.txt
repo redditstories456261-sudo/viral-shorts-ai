@@ -1,0 +1,26 @@
+# Viral Shorts AI - GPU worker Python dependencies (pinned)
+# ---------------------------------------------------------------------------
+# GPU / CUDA NOTES (not installed by this file):
+#   * NVIDIA GPU drivers + CUDA toolkit live on the worker host / base image.
+#     They are installed via Dockerfile.gpu (owned by the infra team) -- see
+#     worker/GPU_DEPS.md for the exact install location and commands.
+#   * The torch wheel below is the CUDA 12.1 build. Install it with:
+#         pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+#   * The pipeline shells out to the system `ffmpeg` binary (with libass and,
+#     for GPU encoding, nvenc support). The code raises a clear RuntimeError
+#     if `ffmpeg` is missing from PATH. See worker/GPU_DEPS.md.
+# ---------------------------------------------------------------------------
+
+celery==5.4.0
+faster-whisper==1.1.0
+torch==2.4.1  # CUDA 12.1 wheel: pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+mediapipe==0.10.14
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+boto3==1.34.131
+SQLAlchemy==2.0.31
+psycopg2-binary==2.9.9
+pydantic==2.8.2
+pydantic-settings==2.4.0
+httpx==0.27.0
+redis==5.0.7
