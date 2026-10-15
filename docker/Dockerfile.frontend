@@ -1,0 +1,29 @@
+# Viral Shorts AI — frontend image.
+# Multi-stage: node:20 builds the Vite SPA, then the built tree is shipped as
+# a plain static holder. nginx serves those files via the shared `static`
+# volume (see docker-compose.yml); this service exposes no ports.
+# Build context is the repository root, so paths below are repo-relative:
+#   docker build -f docker/Dockerfile.frontend --build-arg VITE_API_URL=https://example.com ..
+ARG VITE_API_URL=https://example.com
+
+# ---- build stage -----------------------------------------------------------
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Install deps first for better layer caching.
+# package-lock.json ho to npm ci (reproducible), warna npm install (pod deploy).
+COPY frontend/package.json ./
+COPY frontend/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+COPY frontend/ ./
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+RUN npm run build
+
+# ---- static output stage ---------------------------------------------------
+FROM busybox:1.36
+COPY --from=build /app/dist /dist
+# Default command is overridden by docker-compose.yml (sync /dist into the
+# shared volume, then idle). Kept so the image also runs standalone.
+CMD ["sh", "-c", "while true; do sleep 86400; done"]

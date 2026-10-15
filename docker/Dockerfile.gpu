@@ -1,0 +1,63 @@
+# Viral Shorts AI — GPU worker image (Celery + Whisper + ffmpeg).
+# Build context is the repository root, so paths below are repo-relative:
+#   docker build -f docker/Dockerfile.gpu ..
+#
+# HOST REQUIREMENT: the NVIDIA Container Toolkit must be installed on the
+# Docker host, otherwise the container cannot see the GPU. nvidia-smi is
+# injected into the container by the toolkit at runtime (it is not baked
+# into this image); the worker code logs GPU name/VRAM at startup.
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# PyTorch wheel index (CUDA 12.1 builds). Override for CPU-only dev images:
+#   docker build -f docker/Dockerfile.gpu --build-arg PIP_INDEX_URL=https://pypi.org/simple ..
+ARG PIP_INDEX_URL=https://download.pytorch.org/whl/cu121
+
+# Python 3.11 via deadsnakes (Ubuntu 22.04 ships 3.10) + ffmpeg for media
+# processing + curl for debugging/health probing.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-venv \
+        ffmpeg \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.11 -m ensurepip --upgrade \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+WORKDIR /app
+
+# NOTE for the worker team: worker/requirements.txt should keep torch's
+# index documented in its header comment, e.g.:
+#   # torch: CUDA 12.1 wheel -> --index-url https://download.pytorch.org/whl/cu121
+# and its torch pin must match a cu121 build (e.g. torch==2.3.1+cu121) or be
+# unpinned. We install torch from the CUDA index FIRST so the pin in
+# requirements.txt resolves to the cu121 wheel instead of pip swapping in a
+# CPU-only wheel from PyPI afterwards.
+COPY worker/requirements.txt ./worker/requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" torch \
+    && python -m pip install --no-cache-dir -r worker/requirements.txt
+
+# Worker code (owned by the worker team) + the shared common package.
+# PYTHONPATH=/app makes both importable as `worker...` and `shared...`.
+COPY worker/ ./worker/
+COPY shared/ ./shared/
+
+# Run as a non-root user.
+# NOTE on GPU device access: /dev/nvidia* nodes are injected by the NVIDIA
+# Container Toolkit with permissions taken from the host. If the host
+# restricts them (or /dev/dri) to the `video` group, grant access at runtime,
+# e.g. in docker-compose.yml:  group_add: ["video"]
+RUN useradd --create-home --shell /bin/bash worker \
+    && mkdir -p /tmp/media \
+    && chown -R worker:worker /app /tmp/media
+USER worker
+
+# Sane default; docker-compose.yml overrides this with the same command.
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1"]

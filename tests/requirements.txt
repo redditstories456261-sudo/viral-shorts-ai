@@ -1,0 +1,10 @@
+# Test-only dependencies for the Viral Shorts AI test-suite.
+#
+# The backend/worker bring their own requirements; this file covers just what
+# the tests need to run:
+#   - pytest            test runner
+#   - httpx             required by fastapi.testclient.TestClient
+#   - fastapi           provides fastapi.testclient.TestClient
+pytest
+httpx
+fastapi
